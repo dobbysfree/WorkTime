@@ -1,0 +1,81 @@
+﻿@page "/adminholiday"
+
+@using works.Models
+@using works.Comm
+@using System.Data
+
+@inject DialogService DialogService
+@inject SignInManager<IdentityUser> signInManager
+@inject NotificationService notificationService
+
+    <RadzenCard Style="height: 100%;margin-bottom:1rem">
+        <RadzenLabel Text="공휴일 관리" Style="margin-bottom:1rem"/>
+        <RadzenScheduler @ref="calendar" style="height: 600px;" TItem="Holiday" Data="@holidays" SelectedIndex="0"
+                         StartProperty="date" EndProperty="date" TextProperty="type_name"
+                         AppointmentRender="@OnDailyRender" AppointmentSelect="@OnEditSlot" SlotSelect="@OnAddSlot">
+            <RadzenMonthView />
+        </RadzenScheduler>
+    </RadzenCard>
+
+@code {
+    RadzenScheduler<Holiday> calendar;
+    List<Holiday> holidays;
+    Dictionary<int, WorkType> work_type;
+
+    protected override async Task OnInitializedAsync()
+    {
+        string[] query = new string[2];
+
+        query[0] = "SELECT a.date, b.`no`, b.name FROM tb_holiday AS a JOIN tb_work_type AS b ON a.type_no=b.`no`;";
+        query[1] = "SELECT * FROM tb_work_type WHERE category='2'";
+
+        DataTable[] dts = DB.SelectMulti(query);
+
+        holidays = new List<Holiday>();
+        for (int i = 0; i < dts[0].Rows.Count; i++)
+        {
+            var row = dts[0].Rows[i].ItemArray;
+            holidays.Add(new Holiday { date = (DateTime)row[0], type_no = (int)row[1], type_name = (string)row[2] });
+        }
+
+        #region 근태 구분 관리
+        work_type = new Dictionary<int, WorkType>();
+        for (int i = 0; i < dts[1].Rows.Count; i++)
+        {
+            var row = dts[1].Rows[i].ItemArray;
+            int no  = (int)row[0];
+
+            work_type[no] = new WorkType { no = no, name = (string)row[1], category = (int)row[2], deduction = (decimal)row[3] };
+        }
+        #endregion
+    }
+
+    void OnDailyRender(SchedulerAppointmentRenderEventArgs<Holiday> args)
+    {
+        args.Attributes["style"] = "background: red";
+    }
+
+    async Task OnEditSlot(SchedulerAppointmentSelectEventArgs<Holiday> args)
+    {
+        Holiday day = await DialogService.OpenAsync<EditHolidayPage>("공휴일 수정/삭제", new Dictionary<string, object> {
+            { "day", args.Data },
+            { "work_type", work_type },
+            { "IsEdit", true }
+        });
+
+        if (day != null)
+            await OnInitializedAsync();
+    }
+
+    async Task OnAddSlot(SchedulerSlotSelectEventArgs args)
+    {
+        Holiday day = await DialogService.OpenAsync<EditHolidayPage>("공휴일 수정/삭제", new Dictionary<string, object> {
+            { "day", new Holiday { date = args.Start } },
+            { "work_type", work_type },
+            { "IsEdit", false }
+        });
+
+        if (day != null)
+            await OnInitializedAsync();
+    }
+}

@@ -1,0 +1,16 @@
+﻿@page "/account/signedout"
+
+@inject NavigationManager navigationManager
+
+<div class="container">
+    <h1 class="title">You are now signed out</h1>
+</div>
+
+@code
+{
+    protected override async Task OnInitializedAsync()
+    {
+        navigationManager.NavigateTo("account/signin");
+        return;
+    }
+}

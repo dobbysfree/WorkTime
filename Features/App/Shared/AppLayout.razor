@@ -1,0 +1,160 @@
+﻿@*@using works.Features.App.Components*@
+@using Microsoft.AspNetCore.Components
+@using Microsoft.AspNetCore.Http
+@using Radzen.Blazor
+@using works.Models
+@using Microsoft.AspNetCore.Identity
+@using works.Features.App.Pages
+
+@inherits LayoutComponentBase
+
+@inject ThemeState ThemeState
+@inject NavigationManager UriHelper
+@inject works.Features.App.Services.SideMenu MenuService
+@inject IJSRuntime JSRuntime
+@inject IHttpContextAccessor httpContextAccessor
+@inject SignInManager<IdentityUser> signInManager
+@inject DialogService dialogService
+
+<RadzenDialog />
+<RadzenNotification />
+
+<RadzenHeader>
+    <ChildContent>
+        <div class="row justify-content-start align-items-center">
+            <div class="col-6 d-flex align-items-center">
+                <RadzenSidebarToggle Click="@(args => { sidebarExpanded = !sidebarExpanded; bodyExpanded = !bodyExpanded; })">
+                </RadzenSidebarToggle>
+                <RadzenLabel Text="Qraft Technologies" />
+            </div>
+            <div class="col-6 d-flex align-items-center justify-content-end">
+                <div class="d-none d-md-inline-flex align-items-center">
+                    <RadzenLink Text="QRAFT" Icon="home" class="ui-button btn-secondary d-none d-md-inline-block" style="background:skyblue; padding:0px 1rem 0px 1rem; margin:0px 0rem 0px 1rem" target="_blank"
+                                path="https://qraftec.com" />
+                    <RadzenLink Text="Mail" Icon="email" class="ui-button btn-secondary d-none d-md-inline-block" style="background:skyblue; padding:0px 1rem 0px 1rem; margin:0px 0rem 0px 1rem" target="_blank"
+                                path="https://outlook.office365.com/mail/inbox" />
+                    <RadzenLink Text="IFC방문신청" Icon="meeting_room" class="ui-button btn-secondary d-none d-md-inline-block" style="background:skyblue; padding:0px 1rem 0px 1rem; margin:0px 2rem 0px 1rem" target="_blank"
+                                path="https://visitor.ifcseoul.com/mng/visit/reserve/reserve.do" />
+                </div>
+                <RadzenProfileMenu>
+                    <Template>
+                        <RadzenGravatar Email="@signInManager.Context.User.Identity.Name" />
+                    </Template>
+                    <ChildContent>
+                        <RadzenButton Text="@signInManager.Context.User.Identity.Name" Icon="psychology" Style="background-color:transparent; color:dimgray"
+                                      Click="@(args => dialogService.Open<EditUserPage>("User Details",
+                                                new Dictionary<string, object>() { { "User", new Employee() { email = signInManager.Context.User.Identity.Name } } },
+                                                new DialogOptions(){ Width = "600px", Height = "600px" }))" />
+                        <RadzenProfileMenuItem Text="Logout" Path="/account/signout" Icon="exit_to_app" />
+                    </ChildContent>
+                </RadzenProfileMenu>
+            </div>
+        </div>
+    </ChildContent>
+</RadzenHeader>
+
+<div style="width:100%">
+    <RadzenBody @ref="@body0" @bind-Expanded="@bodyExpanded">
+        <ChildContent>
+            <RadzenContentContainer Name="main">
+                @Body
+            </RadzenContentContainer>
+        </ChildContent>
+    </RadzenBody>
+</div>
+
+<RadzenSidebar @ref="@sidebar0" @bind-Expanded="@sidebarExpanded">
+    <ChildContent>
+        <RadzenPanelMenu Style="padding-top: 2rem">
+            @foreach (var category in menus)
+            {
+                <RadzenPanelMenuItem @bind-Expanded="@category.Expanded" Text="@category.Name" Path="@category.Path" Icon="@category.Icon">
+                    @if (category.Children != null)
+                    {
+                        @foreach (var item in category.Children)
+                        {
+                            <RadzenPanelMenuItem Text="@item.Name" Path="@item.Path" Icon="@item.Icon" />
+                        }
+                    }
+                </RadzenPanelMenuItem>
+            }
+
+            <AuthorizeView Policy="RequireAdmin">
+                <Authorized>
+                    <RadzenPanelMenuItem Text="관리자" Expanded="true">
+                        <RadzenPanelMenuItem Text="통계" Path="/administration" Icon="&#xe24b" />
+                        <RadzenPanelMenuItem Text="휴일" Path="/adminholiday" Icon="insert_invitation" />
+                    </RadzenPanelMenuItem>
+                </Authorized>
+            </AuthorizeView>
+        </RadzenPanelMenu>
+    </ChildContent>
+</RadzenSidebar>
+
+<RadzenFooter>
+    <ChildContent>
+        <RadzenLabel Text="Copyright &copy; 2020" />
+        @*<div class="row justify-content-start align-items-center">
+                <RadzenLabel Text="Copyright &copy; 2019" />
+
+                <div class="col-6 d-flex align-items-center justify-content-end">
+                    <RadzenLink Text="Mail" Icon="email" class="ui-button btn-secondary d-none d-md-inline-block" style="background:skyblue; padding:0px 1rem 0px 1rem; margin:0px 0rem 0px 1rem" target="_blank"
+                                path="https://outlook.office365.com/mail/inbox" />
+                    <RadzenLink Text="IFC방문신청" Icon="meeting_room" class="ui-button btn-secondary d-none d-md-inline-block" style="background:skyblue; padding:0px 1rem 0px 1rem; margin:0px 0rem 0px 1rem" target="_blank"
+                                path="https://visitor.ifcseoul.com/mng/visit/reserve/reserve.do" />
+                </div>
+            </div>*@
+    </ChildContent>
+</RadzenFooter>
+
+@code
+{
+    RadzenSidebar sidebar0;
+    RadzenBody body0;
+    bool sidebarExpanded = true;
+    bool bodyExpanded = false;
+
+    IEnumerable<Menu> menus;
+    string email = "sunghyun.chang@qraftec.com";
+
+    dynamic themes = new[]
+{
+        new { Text = "Default", Value = "default"},
+        new { Text = "Dark", Value="dark" },
+        new { Text = "Software", Value = "software"},
+        new { Text = "Humanistic", Value = "humanistic" }
+    };
+
+    string Theme
+    {
+        get
+        {
+            return $"{ThemeState.CurrentTheme}.css";
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        if (httpContextAccessor != null && httpContextAccessor.HttpContext != null &&
+             httpContextAccessor.HttpContext.Request != null && httpContextAccessor.HttpContext.Request.Headers.ContainsKey("User-Agent"))
+        {
+            var userAgent = httpContextAccessor.HttpContext.Request.Headers["User-Agent"].FirstOrDefault();
+            if (!string.IsNullOrEmpty(userAgent))
+            {
+                if (userAgent.Contains("iPhone") || userAgent.Contains("Android") || userAgent.Contains("Googlebot"))
+                {
+                    sidebarExpanded = false;
+                    bodyExpanded = true;
+                }
+            }
+        }
+
+        menus = MenuService.Menus;
+        System.Threading.Thread.CurrentThread.CurrentCulture = new System.Globalization.CultureInfo("en-US");
+    }
+
+    void FilterPanelMenu(ChangeEventArgs args)
+    {
+        var term = args.Value.ToString();
+    }
+}

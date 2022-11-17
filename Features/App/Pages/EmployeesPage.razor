@@ -1,0 +1,122 @@
+﻿@page "/employees"
+
+@using Models
+@using System.Data
+@using Comm
+@using Helpers
+@using System.Text
+
+<div>
+    <RadzenCard Style="height: 100%; margin-top:1rem; margin-bottom:1rem">
+        <RadzenLabel Text="연도별 입사인원" />
+        <RadzenChart>
+            <RadzenLineSeries Smooth="false" Title="Total" Data="@employee_year" CategoryProperty="Key" ValueProperty="Value">
+                <RadzenMarkers MarkerType="MarkerType.Circle" />
+                <RadzenLegend Visible="false" />
+            </RadzenLineSeries>
+            <RadzenCategoryAxis FormatString="{0}년" Min="@employee_year.Keys.Min()" Max="@employee_year.Keys.Max()" />
+            <RadzenValueAxis Formatter="@ChartFormat" Min="0">
+                <RadzenGridLines Visible="true" />
+            </RadzenValueAxis>
+        </RadzenChart>
+    </RadzenCard>
+
+    <RadzenCard>
+        <div class="col-2" style="margin-bottom:1rem">
+            <label>
+                <RadzenLabel Text="퇴사자 표시" />
+                <RadzenCheckBox @bind-Value="@visible" TValue="bool" Change="@Changing" />
+            </label>
+        </div>
+
+        <RadzenGrid AllowFiltering="true" AllowPaging="true" AllowSorting="true" PageSize="15" Data="@employees" TItem="Employee">
+            <Columns>
+                <RadzenGridColumn TItem="Employee" Width="5%" Property="num" Title="사번" Filterable="false" />
+                @*<RadzenGridColumn TItem="Employee" Property="Photo" Title="Photo" Sortable="false" Filterable="false">
+                <Template Context="data">
+                    <RadzenImage Path="@data?.Photo" />
+                </Template>
+            </RadzenGridColumn>*@
+                <RadzenGridColumn TItem="Employee" Property="name" Title="이름" />
+                <RadzenGridColumn TItem="Employee" Property="team" Title="Team" />
+                <RadzenGridColumn TItem="Employee" Property="contact" Title="연락처" />
+                <RadzenGridColumn TItem="Employee" Width="20%" Property="email" Title="Email" />
+                <RadzenGridColumn TItem="Employee" Property="join_date" Title="입사일" Filterable="false">
+                    <Template Context="data">
+                        @String.Format("{0:d}", data.join_date)
+                    </Template>
+                </RadzenGridColumn>
+                <RadzenGridColumn TItem="Employee" Width="8%" Property="tot_annual" Title="연차일수" Filterable="false" />
+                <RadzenGridColumn TItem="Employee" Width="8%" Property="use_annual" Title="사용연차" Filterable="false" />
+                <RadzenGridColumn TItem="Employee" Width="8%" Property="auth" Title="관리자" Filterable="false" />
+                <RadzenGridColumn TItem="Employee" Property="retire_date" Title="퇴사일" Filterable="false">
+                    <Template Context="data">
+                        @String.Format("{0:d}", data.retire_date)
+                    </Template>
+                </RadzenGridColumn>
+            </Columns>
+        </RadzenGrid>
+    </RadzenCard>    
+</div>
+
+
+@code {
+    List<Employee> employees;
+    Dictionary<int, int> employee_year;
+
+    bool visible;
+
+    protected override void OnInitialized()
+    {
+        StringBuilder query = new StringBuilder();
+        query.Append("SELECT a.num, a.name, a.email, a.contact, a.team, a.join_dt, a.auth, a.retire_dt, " +
+            "IFNULL((SELECT SUM(c.deduction) FROM tb_daily AS b JOIN tb_work_type AS c ON b.`type`=c.`no` WHERE YEAR(b.base_date)=YEAR(CURRENT_DATE()) AND b.emp_num=a.num AND b.`type` > 10), 0) " +
+            "FROM tb_users AS a");
+
+        if (visible == false)
+            query.Append(" WHERE a.retire_dt = '';");
+
+        DataTable dt = DB.SelectSingle(query.ToString());
+
+        if (dt.Rows.Count == 0)
+            return;
+
+        employees       = new List<Employee>();
+        employee_year   = new Dictionary<int, int>();
+
+        for (int i = 0; i < dt.Rows.Count; i++)
+        {
+            var row         = dt.Rows[i].ItemArray;
+
+            Employee emp    = new Employee();
+            emp.num         = (int)row[0];
+            emp.name        = (string)row[1];
+            emp.email       = (string)row[2];
+            emp.contact     = (string)row[3];
+            emp.team        = (string)row[4];
+            emp.join_date   = (DateTime)row[5];
+            emp.auth        = (int)row[6];
+            emp.retire_date = (string)row[7];
+            emp.use_annual  = (decimal)row[8];
+            emp.tot_annual  = Tool.Vacation(emp.join_date);
+
+            employees.Add(emp);
+
+            if (!employee_year.ContainsKey(emp.join_date.Year))
+                employee_year[emp.join_date.Year] = 1;
+            else
+                employee_year[emp.join_date.Year] += 1;
+        }
+    }
+
+    void Changing()
+    {
+        OnInitialized();
+    }
+
+
+    string ChartFormat(object value)
+    {
+        return ((double)value).ToString("N0");
+    }
+}

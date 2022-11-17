@@ -1,0 +1,101 @@
+﻿@page "/account/signin"
+
+@using works.Models
+@using System.Web
+@using System.Data
+@using works.Comm
+
+@inject UserManager<IdentityUser> userManager
+@inject SignInManager<IdentityUser> signInManager
+@inject NavigationManager navigationManager
+@inject IDataProtectionProvider dataProtectionProvider
+
+<div class="container">
+    @if (showSignInError)
+    {
+        <div class="notification is-danger">
+            @error_msg
+        </div>
+    }
+
+    <RadzenCard>
+        <RadzenTemplateForm TItem="Account" Data="@acnt" Submit="@Login">
+            <div class="field">
+                <label class="label">E-mail</label>
+                <div class="control">
+                    <RadzenTextBox style="display: block; width:50%; font-size:large" Name="tb_email" @bind-Value="@acnt.Email" />
+                    <RadzenRequiredValidator Component="tb_email" Text="필수 항목입니다." Popup="true" Style="position: absolute" />
+                    <RadzenEmailValidator Component="tb_email" Text="Provide a valid email address" Popup="true" Style="position: absolute" />
+                </div>
+            </div>
+
+            <div class="field">
+                <label class="label">Password</label>
+                <div class="control">
+                    <RadzenPassword style="display: block; width:50%; font-size:x-large" Name="tb_pw" @bind-Value="@acnt.Password" />
+                    <RadzenRequiredValidator Component="tb_pw" Text="필수 항목입니다." Popup="true" Style="position: absolute" />
+                </div>
+            </div>
+
+            <div class="field" style="margin-top:3rem">
+                <div class="control">
+                    <RadzenButton ButtonType="ButtonType.Submit" Icon="login" Text="Sign In" />
+                </div>
+            </div>
+        </RadzenTemplateForm>
+    </RadzenCard>
+</div>
+
+<div class="container" style="margin-top:1rem">
+    <p>If you do not have an account register one <a href="/account/register">here</a>!</p>
+</div>
+
+@code
+{
+    private Account acnt = new Account();
+    private bool showSignInError = false;
+    string error_msg = "";
+
+    private async Task Login(Account model)
+    {
+        var user = await userManager.FindByEmailAsync(acnt.Email);
+
+        if (user == null)
+        {
+            error_msg = "계정이 없습니다.";
+            showSignInError = true;
+            return;
+        }
+
+        var chk_pw = await userManager.CheckPasswordAsync(user, acnt.Password);
+
+        if (!chk_pw)
+        {
+            error_msg = "Sorry, wrong password";
+            showSignInError = true;
+            return;
+        }
+
+        showSignInError = false;
+
+        var token = await userManager.GenerateUserTokenAsync(user, TokenOptions.DefaultProvider, "SignIn");
+        var data = $"{user.Id}|{token}";
+        var parsedQuery = HttpUtility.ParseQueryString(new Uri(navigationManager.Uri).Query);
+        var returnUrl = parsedQuery["returnUrl"];
+
+        if (!string.IsNullOrWhiteSpace(returnUrl))
+            data += $"|{returnUrl}";
+
+        var pdata = dataProtectionProvider.CreateProtector("SignIn").Protect(data);
+
+
+        DataTable dt = DB.SelectSingle("SELECT auth FROM tb_users WHERE email='" + acnt.Email + "';");
+        int auth = (int)dt.Rows[0].ItemArray[0];
+
+        var role = await userManager.IsInRoleAsync(user, "Admin");
+        if (!role)
+            userManager.AddToRoleAsync(user, "Admin").GetAwaiter();
+
+        navigationManager.NavigateTo("/account/signinactual?t=" + pdata, forceLoad: true);
+    }
+}

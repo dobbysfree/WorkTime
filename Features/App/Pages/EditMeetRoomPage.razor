@@ -1,0 +1,120 @@
+﻿@using Models
+
+@inject DialogService DialogService
+
+    <RadzenTemplateForm TItem="MeetRoom" Data="@model" Submit="@OnSubmit">
+        <div class="row" style="margin-bottom: 16px">
+            <div class="col-md-2">
+                <RadzenLabel Text="회의실" />
+            </div>
+            <div class="col">
+                <RadzenSelectBar @bind-Value="@model.room_num" TValue="int">
+                    <Items>
+                        <RadzenSelectBarItem Text="회의실 1(大)" Value="1" Style="font-size:15px;  margin-right:5px " />
+                        <RadzenSelectBarItem Text="회의실 2(中)" Value="2" Style="font-size:15px;  margin-left:5px; margin-right:5px" />
+                        <RadzenSelectBarItem Text="회의실 3(小)" Value="3" Style="font-size:15px;  margin-left:5px" />
+                    </Items>
+                </RadzenSelectBar>
+            </div>
+        </div>
+
+        <div class="row" style="margin-bottom: 16px">
+            <div class="col-md-2">
+                <RadzenLabel Text="예약자" />
+            </div>
+            <div class="col">
+                <RadzenTextBox @bind-Value="@model.emp_name" ReadOnly="true"/>
+            </div>
+        </div>
+
+
+        <div class="row" style="margin-bottom: 16px">
+            <div class="col-md-2">
+                <RadzenLabel Text="시작" />
+            </div>
+            <div class="col">
+                <RadzenDatePicker @bind-Value="@model.start_dttm" Name="dp_start" ShowTime="true" />
+            </div>
+        </div>
+
+        <div class="row" style="margin-bottom: 16px">
+            <div class="col-md-2">
+                <RadzenLabel Text="종료" />
+            </div>
+            <div class="col">
+                <RadzenDatePicker @bind-Value="@model.end_dttm" Name="dp_end" ShowTime="true" />                
+            </div>
+            <div class="col">
+                <RadzenDropDown Data="@period" TextProperty="Value" ValueProperty="Key" TValue="int" Change="@ChangePeriod" Style="width:120px" />
+            </div>
+        </div>
+
+        <div class="row" style="margin-bottom: 30px">
+            <div class="col-md-2">
+                <RadzenLabel Text="내용" />
+            </div>
+            <div class="col">
+                <RadzenTextBox @bind-Value="@model.note" Name="note" style="width:100%"/>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-md-2"/>
+            <div class="col">
+                <RadzenButton ButtonType="ButtonType.Submit" Text="Save" Style="margin-right:20px; width:150px"/>
+                <RadzenButton Click="@OnDelete" Text="Delete" ButtonStyle="ButtonStyle.Secondary" Style="margin-left:20px; width:150px" 
+                              Visible="@(User != null && (Org.emp_num == User.num || User.auth == 1))"/>
+            </div>
+        </div>
+    </RadzenTemplateForm>
+
+@code 
+{
+    MeetRoom model { get; set; }
+
+    [Parameter]
+    public MeetRoom Org { get; set; }
+
+    [Parameter]
+    public Employee User { get; set; }
+
+    Dictionary<int, string> period = new Dictionary<int, string>()
+    {
+        { 30, "30분 추가" },
+        { 60, "1시간 추가" },
+        { 120, "2시간 추가" }
+    };
+
+
+    protected override void OnParametersSet()
+    {
+        model               = new MeetRoom();
+        model.idx           = Org.idx;
+        model.emp_num       = Org.emp_num;
+        model.emp_name      = Org.emp_name;
+        model.room_num      = Org.room_num;
+        model.start_dttm    = Org.start_dttm;
+        model.end_dttm      = Org.end_dttm;
+        model.note          = Org.note;
+    }
+
+    void OnSubmit(MeetRoom model)
+    {
+        model.reflag = 1;
+        model.text = string.Format("{0} 회의실({1}~{2}) [예약자:{3}]",
+            model.room_num, model.start_dttm.ToString("HH:mm"), model.end_dttm.ToString("HH:mm"), model.emp_name);
+        DialogService.Close(model);
+    }
+
+    void OnDelete()
+    {
+        model.reflag = 2;
+        DialogService.Close(model);
+    }
+
+    // 시간 추가 
+    void ChangePeriod(object value)
+    {
+        model.end_dttm = model.end_dttm.AddMinutes((int)value);
+    }
+}

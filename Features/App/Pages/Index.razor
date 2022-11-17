@@ -1,0 +1,319 @@
+﻿@page "/"
+
+@using works.Models
+@using works.Comm
+@using works.Helpers
+@using System.Data
+
+@inject AuthenticationStateProvider authenticationStateProvider
+@inject DialogService DialogService
+@inject SignInManager<IdentityUser> signInManager
+@inject NotificationService notificationService
+
+<div class="p-lg-3">
+    <div class="row">
+        <div class="col-lg-3 mb-3">
+            <RadzenCard style="height: 100%;margin-bottom:1rem">
+                <h4>전체 구성원 수</h4>
+                <b style="background-color: rgba(0, 0, 0, 0); color: rgb(71, 156, 200); display: block; float: none; font-size: 2.5rem; margin-bottom: 0px; text-align: right;">
+                    @(employees.Count)
+                </b>
+            </RadzenCard>
+        </div>
+
+        <div class="col-lg-3 mb-3">
+            <RadzenCard style="height: 100%">
+                <h4>금일 휴가</h4>
+                <b style="background-color: rgba(0, 0, 0, 0); color: rgb(71, 156, 200); display: block; float: none; font-size: 2.5rem; margin-bottom: 0px; text-align: right;">
+                    @(vacations.Count(x => x.type_category == 1 && x.base_date.Date == DateTime.Today))
+                </b>
+            </RadzenCard>
+        </div>
+
+        <div class="col-lg-3 mb-3">
+            <RadzenCard style="height: 100%">
+                <h4>사용 / 총 연차</h4>
+                <b style="background-color: rgba(0, 0, 0, 0); color: rgb(71, 156, 200); display: block; float: none; font-size: 1.75rem; margin-bottom: 0px; text-align: right;">
+                    @(user.use_annual + " / " + user.tot_annual)
+                </b>
+                <RadzenProgressBar Value="@((int)((user.use_annual * 100) / user.tot_annual))" Max="100" Style="margin-bottom: 5px; margin-top: 10px" />
+            </RadzenCard>
+        </div>
+
+        <div class="col-lg-3 mb-3">
+            <RadzenCard style="height: 100%">
+                <h4>@(month.Month) 근무시간</h4>
+                <b style="background-color: rgba(0, 0, 0, 0); color: rgb(71, 156, 200); display: block; float: none; font-size: 1.75rem; margin-bottom: 0px; text-align: right;">
+                    @(string.Format("{0}시 {1:00}분", (worked.Days * 24) + worked.Hours, worked.Minutes) + " / " + work_hour + "시")
+                </b>
+                <RadzenProgressBar Value="@((int)((worked.TotalHours * 100) / work_hour))" Max="100" Style="margin-bottom: 5px; margin-top: 10px" />
+            </RadzenCard>
+        </div>
+    </div>
+
+    <div class="row" style="height: 100%;margin-bottom:1rem">
+        <div class="col-lg-6 mb-6">
+            <RadzenCard>
+                <h4>구성원 휴가</h4>
+                <RadzenScheduler style="height: 600px;" TItem="Daily" Data="@vacations"
+                                 StartProperty="start_dttm" EndProperty="end_dttm" TextProperty="text"
+                                 AppointmentRender="@OnVacationRender">
+                    <RadzenMonthView />
+                </RadzenScheduler>
+            </RadzenCard>
+        </div>
+
+        <div class="col-lg-6 mb-6">
+            <RadzenCard>
+                <h4>회의실 예약</h4>
+                <RadzenScheduler @ref="calendar" style="height: 600px;" TItem="MeetRoom" Data="@rooms.Values"
+                                 StartProperty="start_dttm" EndProperty="end_dttm" TextProperty="text" SelectedIndex="0"
+                                 SlotSelect="@OnAddMeetingRoom" AppointmentSelect="@OnEditMeetingRoom" AppointmentRender="@OnRoomRender">
+                    <RadzenDayView />
+                    <RadzenWeekView />
+                    <RadzenMonthView />
+                </RadzenScheduler>
+            </RadzenCard>
+        </div>
+    </div>
+</div>
+
+@code
+{
+    Employee user = new Employee();
+    Dictionary<int, Employee> employees;
+    Dictionary<int, MeetRoom> rooms;
+    List<Daily> vacations;
+
+    DateTime month { get; set; }
+    int work_hour { get; set; }
+    TimeSpan worked { get; set; }
+
+    RadzenScheduler<MeetRoom> calendar;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await authenticationStateProvider.GetAuthenticationStateAsync();
+        string who = signInManager.Context.User.Identity.Name;
+
+        string[] query = new string[5];
+        // 구성원
+        query[0] = "SELECT a.num, a.name, a.email, a.contact, a.team, a.join_dt, a.auth, a.retire_dt, " +
+            "IFNULL((SELECT SUM(c.deduction) FROM tb_daily AS b JOIN tb_work_type AS c ON b.`type`=c.`no` WHERE YEAR(b.base_date)=YEAR(CURRENT_DATE()) " +
+            "AND b.emp_num=a.num AND (SELECT c.category FROM tb_work_type AS c WHERE b.`type`=c.`no`) = '1'), 0) " +
+            "FROM tb_users AS a ORDER BY a.num ASC;";
+
+        // 회의실 예약
+        query[1] = "SELECT a.idx, a.emp_num, IFNULL((SELECT b.name FROM tb_users AS b WHERE a.emp_num=b.num), ''), a.room, a.start_dttm, a.end_dttm, a.note, a.chg_dttm " +
+                "FROM tb_meetroom AS a WHERE YEAR(a.start_dttm) = YEAR(CURRENT_DATE()) AND MONTH(a.start_dttm) >= MONTH(CURRENT_DATE());";
+
+        // 구성원 휴가
+        query[2] = "SELECT a.emp_num, (SELECT b.name FROM tb_users AS b WHERE a.emp_num=b.num), a.base_date, a.start_dttm, a.end_dttm, b.* FROM tb_daily AS a JOIN tb_work_type AS b ON a.`type`=b.`no` " +
+                "WHERE YEAR(a.base_date) = YEAR(CURRENT_DATE()) AND MONTH(a.base_date) >= MONTH(CURRENT_DATE()) AND (SELECT c.category FROM tb_work_type AS c WHERE a.`type`=c.`no`) = '1';";
+
+        // 공휴일
+        query[3] = "SELECT a.date, b.* FROM tb_holiday AS a JOIN tb_work_type AS b ON a.type_no=b.`no` WHERE YEAR(a.date) = YEAR(CURRENT_DATE());";
+
+        // 사용자 근무시간
+        query[4] = "SELECT a.base_date, a.start_dttm, a.end_dttm, b.`no`, b.category, b.deduction FROM tb_daily AS a JOIN tb_work_type AS b ON a.`type`=b.`no` " +
+                "WHERE a.emp_num=(SELECT c.num FROM tb_users AS c WHERE c.email='" + who + "') " +
+                "AND YEAR(a.base_date) = YEAR(CURRENT_DATE()) AND MONTH(a.base_date) = MONTH(CURRENT_DATE());";
+
+        DataTable[] dts = DB.SelectMulti(query);
+
+        if (dts.Length < query.Length)
+            return;
+
+        employees = new Dictionary<int, Employee>();
+        for (int i = 0; i < dts[0].Rows.Count; i++)
+        {
+            var row = dts[0].Rows[i].ItemArray;
+
+            Employee emp = new Employee();
+            emp.num = (int)row[0];
+            emp.name = (string)row[1];
+            emp.email = (string)row[2];
+            emp.contact = (string)row[3];
+            emp.team = (string)row[4];
+            emp.join_date = (DateTime)row[5];
+            emp.auth = (int)row[6];
+            emp.retire_date = (string)row[7];
+            emp.use_annual = (decimal)row[8];
+            emp.tot_annual = Tool.Vacation(emp.join_date);
+
+            employees[emp.num] = emp;
+
+            if (emp.email == who)
+                user = emp;
+        }
+
+        rooms = new Dictionary<int, MeetRoom>();
+        for (int i = 0; i < dts[1].Rows.Count; i++)
+        {
+            var row = dts[1].Rows[i].ItemArray;
+
+            MeetRoom mr = new MeetRoom();
+            mr.idx = (int)row[0];
+            mr.emp_num = (int)row[1];
+            mr.emp_name = (string)row[2];
+            mr.room_num = (int)row[3];
+            mr.start_dttm = (DateTime)row[4];
+            mr.end_dttm = (DateTime)row[5];
+            mr.note = (string)row[6];
+            mr.chg_dttm = (DateTime)row[7];
+            mr.text = string.Format("{0} 회의실({1}~{2}) [예약자:{3}]", mr.room_num, mr.start_dttm.ToString("HH:mm"), mr.end_dttm.ToString("HH:mm"), mr.emp_name);
+
+            rooms[mr.idx] = mr;
+        }
+
+        vacations = new List<Daily>();
+        for (int i = 0; i < dts[2].Rows.Count; i++)
+        {
+            var row = dts[2].Rows[i].ItemArray;
+
+            Daily day = new Daily();
+            day.emp_num = (int)row[0];
+            day.emp_name = (string)row[1];
+            day.base_date = (DateTime)row[2];
+            day.start_dttm = (DateTime)row[3];
+            day.end_dttm = (DateTime)row[4];
+            day.type_no = (int)row[5];
+            day.type_nm = (string)row[6];
+            day.type_category = (int)row[7];
+            day.deduction = (decimal)row[8];
+            day.text = day.emp_name + " " + day.type_nm;
+
+            vacations.Add(day);
+        }
+
+        for (int i = 0; i < dts[3].Rows.Count; i++)
+        {
+            var row = dts[3].Rows[i].ItemArray;
+
+            Daily day = new Daily();
+            day.base_date = (DateTime)row[0];
+            day.start_dttm = day.base_date;
+            day.end_dttm = day.base_date;
+            day.type_no = (int)row[1];
+            day.type_nm = (string)row[2];
+            day.type_category = (int)row[3];
+            day.deduction = (decimal)row[4];
+            day.text = day.type_nm;
+            vacations.Add(day);
+        }
+
+        int holidaies = vacations.Count(x => x.type_category == 2 && (x.base_date.Year == DateTime.Today.Year && x.base_date.Month == DateTime.Today.Month));
+        work_hour = (Tool.BusinessDays() - holidaies) * 8;
+        for (int i = 0; i < dts[4].Rows.Count; i++)
+        {
+            var row = dts[4].Rows[i].ItemArray;
+
+            DateTime date = (DateTime)row[0];
+            DateTime start = (DateTime)row[1];
+            DateTime end = (DateTime)row[2];
+            int type_no = (int)row[3];
+            int category = (int)row[4];
+            decimal deduction = (decimal)row[5];
+
+            if (category == 1)
+                work_hour -= (int)(deduction * 8);
+            else
+                worked += Tool.WorkHours(start, end);
+        }
+
+        month = DateTime.Today;
+    }
+
+
+    void OnVacationRender(SchedulerAppointmentRenderEventArgs<Daily> args)
+    {
+        if (args.Data.base_date == DateTime.Today)
+            args.Attributes["style"] = "background: orange";
+
+        if (args.Data.type_category == 2)
+            args.Attributes["style"] = "background: red";
+    }
+
+
+
+    void OnRoomRender(SchedulerAppointmentRenderEventArgs<MeetRoom> args)
+    {
+        if (args.Data.start_dttm.Date == DateTime.Today)
+            args.Attributes["style"] = "background: darkred";
+    }
+
+    // 회의실 예약 수정/삭제
+    async Task OnEditMeetingRoom(SchedulerAppointmentSelectEventArgs<MeetRoom> args)
+    {
+        MeetRoom mr = await DialogService.OpenAsync<EditMeetRoomPage>("회의실 예약(수정/삭제)", new Dictionary<string, object> { { "Org", args.Data }, { "User", user } });
+
+        if (mr == null)
+            return;
+
+        // 삭제 
+        if (mr.reflag == 2)
+        {
+            int rst = DB.Execute("DELETE FROM tb_meetroom WHERE idx='"+ mr.idx + "';");
+
+            if (rst > 0)
+                rooms.Remove(mr.idx);
+        }
+
+        if (mr.reflag == 1)
+        {
+            var exist = rooms.Values.FirstOrDefault(x => x.room_num == mr.room_num && (x.start_dttm <= mr.start_dttm && mr.start_dttm <= x.end_dttm));
+
+            if (exist != null && exist.idx != mr.idx)
+            {
+                ShowNotification(NotificationSeverity.Warning, "Warning", "동일한 시간대에 해당 회의실이 예약되어있습니다 > " + exist.text);
+                return;
+            }
+
+            string query = string.Format("UPDATE tb_meetroom SET room='{0}', start_dttm='{1}', end_dttm='{2}', note='{3}' WHERE idx='{4}';",
+                mr.room_num, mr.start_dttm.ToString("yyyy-MM-dd HH:mm:ss"), mr.end_dttm.ToString("yyyy-MM-dd HH:mm:ss"), mr.note, mr.idx);
+
+            int rst = DB.Execute(query);
+            if (rst > 0)
+                rooms[mr.idx] = mr;
+        }
+
+        await calendar.Reload();
+    }
+
+    // 회의실 예약 추가
+    async Task OnAddMeetingRoom(SchedulerSlotSelectEventArgs args)
+    {
+        if (args.Start < DateTime.Now)
+        {
+            ShowNotification(NotificationSeverity.Warning, "Warning", "현재시간 이후를 선택해주세요");
+            return;
+        }
+
+        MeetRoom mr = new MeetRoom { emp_num = user.num, emp_name = user.name, start_dttm = args.Start, end_dttm = args.End };
+
+        mr = await DialogService.OpenAsync<EditMeetRoomPage>("회의실 예약", new Dictionary<string, object> { { "Org", mr } });
+
+        if (mr == null)
+            return;
+
+        var exist = rooms.Values.FirstOrDefault(x => x.room_num == mr.room_num && (x.start_dttm <= mr.start_dttm && mr.start_dttm <= x.end_dttm));
+        if (exist != null)
+        {
+            ShowNotification(NotificationSeverity.Warning, "Warning", "동일한 시간대에 해당 회의실이 예약되어있습니다 > " + exist.text);
+            return;
+        }
+
+        string query = string.Format("INSERT INTO tb_meetroom (emp_num, room, start_dttm, end_dttm, note) VALUES ('{0}', '{1}', '{2}', '{3}', '{4}');",
+            mr.emp_num, mr.room_num, mr.start_dttm.ToString("yyyy-MM-dd HH:mm:ss"), mr.end_dttm.ToString("yyyy-MM-dd HH:mm:ss"), mr.note);
+
+        int rst = DB.Execute(query);
+        if (rst > 0)
+            await OnInitializedAsync();
+    }
+
+    // 알림 표시
+    void ShowNotification(NotificationSeverity type, string summary, string detail)
+    {
+        notificationService.Notify(new NotificationMessage() { Severity = type, Summary = summary, Detail = detail, Duration = 5000 });
+    }
+}

@@ -1,0 +1,429 @@
+﻿@page "/administration"
+
+@using Models
+@using System.Data
+@using Comm
+@using Helpers
+@using System.Text
+
+@inject UserManager<IdentityUser> userManager
+@inject SignInManager<IdentityUser> signInManager
+@inject NotificationService notificationService
+@inject DialogService dialogService
+
+@attribute [Authorize(Policy = "RequireAdmin")]
+
+<div>
+    <div class="row">
+        <div class="col mb-1">
+            <RadzenCard>
+                <RadzenDatePicker @bind-Value="tday" DateFormat="Y" ShowTime="false" />
+                <RadzenButton Click="@Changing" Text="조회" Style="width: 100px; margin-left:20px" />
+            </RadzenCard>
+        </div>
+
+        <div class="col mb-1">
+            <RadzenCard>
+                <RadzenLabel Text="@("마지막 마감 : " + closed.date.ToString("yyyy년 MM월") + " [" + closed.emp_name + "]")" />
+                <RadzenButton Click="@OnClosingLastMonth" Text="마감하기" ButtonStyle="ButtonStyle.Secondary" Style="margin-left:20px" />
+            </RadzenCard>
+        </div>
+    </div>
+
+    <RadzenCard>
+        <div style="margin-bottom:1rem">
+            <RadzenLabel Text="퇴사자 표시" Style="margin-right:20px" />
+            <RadzenCheckBox @bind-Value="@visible" TValue="bool" Change="@Changing" />
+        </div>
+
+        <RadzenGrid @ref="emp_grid" AllowFiltering="true" AllowPaging="true" AllowSorting="true" PageSize="15" EditMode="DataGridEditMode.Single"
+                    Data="@employees.Values" TItem="Employee">
+            <Template Context="emp">
+                <RadzenCard Style="margin-bottom:auto" Visible="@emp.visible_details">
+                    <div class="row">
+                        <div class="col-lg-3 mb-3">
+                            <RadzenCard style="height: 80%; background:linen">
+                                <h4>출퇴근</h4>
+                                <b style="background-color: rgba(0, 0, 0, 0); color: rgb(71, 156, 200); display: block; float: none; font-size: 1.75rem; margin-bottom: 10px; text-align: right;">
+                                    @string.Format("{0} 회 | {1} : {2:00}", emp.dailies.Count(x => x.type_no == 1), (emp.commute_time.Days * 24) + emp.commute_time.Hours, emp.commute_time.Minutes)
+                                </b>
+                            </RadzenCard>
+                        </div>
+
+                        <div class="col-lg-3 mb-3">
+                            <RadzenCard style="height: 80%; background:linen">
+                                <h4>원격</h4>
+                                <b style="background-color: rgba(0, 0, 0, 0); color: rgb(71, 156, 200); display: block; float: none; font-size: 1.75rem; margin-bottom: 10px; text-align: right;">
+                                    @string.Format("{0} 회 | {1} : {2:00}", emp.dailies.Count(x => x.type_no == 2), (emp.remote_time.Days * 24) + emp.remote_time.Hours, emp.remote_time.Minutes)
+                                </b>
+                            </RadzenCard>
+                        </div>
+
+                        <div class="col-lg-3 mb-3">
+                            <RadzenCard style="height: 80%; background:linen">
+                                <h4>외근</h4>
+                                <b style="background-color: rgba(0, 0, 0, 0); color: rgb(71, 156, 200); display: block; float: none; font-size: 1.75rem; margin-bottom: 10px; text-align: right;">
+                                    @string.Format("{0} 회 | {1} : {2:00}", emp.dailies.Count(x => x.type_no == 3), (emp.outside_time.Days * 24) + emp.outside_time.Hours, emp.outside_time.Minutes)
+                                </b>
+                            </RadzenCard>
+                        </div>
+                    </div>
+                </RadzenCard>
+                <RadzenTabs Visible="@emp.visible_details">
+                    <Tabs>
+                        <RadzenTabsItem Text="차트">
+                            <RadzenLabel Text="일별 근무" />
+                            <RadzenChart>
+                                <RadzenLineSeries Smooth="false" Title="Total" Data="@emp.day_hour" CategoryProperty="Key" ValueProperty="Value">
+                                    <RadzenMarkers MarkerType="MarkerType.Circle" />
+                                    <RadzenLegend Visible="false" />
+                                </RadzenLineSeries>
+                                <RadzenCategoryAxis Padding="20" FormatString="{0:dd}일" Step="@TimeSpan.FromDays(1)" />
+                                <RadzenValueAxis>
+                                    <RadzenGridLines Visible="true" />
+                                </RadzenValueAxis>
+                            </RadzenChart>
+                        </RadzenTabsItem>
+
+                        <RadzenTabsItem Text="캘린더">
+                            <RadzenScheduler style="height: 600px;" TItem="Daily" Data="@emp.dailies" AppointmentRender="@OnDailyRender"
+                                             StartProperty="start_dttm" EndProperty="end_dttm" TextProperty="text">
+                                <RadzenMonthView />
+                            </RadzenScheduler>
+                        </RadzenTabsItem>
+
+                        <RadzenTabsItem Text="표">
+                            <RadzenGrid AllowFiltering="false" AllowPaging="true" AllowSorting="true" PageSize="15" Data="@emp.dailies" TItem="Daily">
+                                <Columns>
+                                    @*<RadzenGridColumn TItem="Daily" Property="idx" Title="Index" />*@
+                                    <RadzenGridColumn TItem="Daily" Property="base_date" Title="기준일">
+                                        <Template Context="data">
+                                            @String.Format("{0:d}", data.base_date)
+                                        </Template>
+                                    </RadzenGridColumn>
+                                    <RadzenGridColumn TItem="Daily" Property="type_nm" Title="구분" />
+                                    <RadzenGridColumn TItem="Daily" Property="start_dttm" Title="시작일시" />
+                                    <RadzenGridColumn TItem="Daily" Property="end_dttm" Title="종료일시" />
+                                </Columns>
+                            </RadzenGrid>
+                        </RadzenTabsItem>
+                    </Tabs>
+                </RadzenTabs>
+            </Template>
+            <Columns>
+                <RadzenGridColumn Width="5%" TItem="Employee" Property="num" Title="사번" Filterable="false" />
+                <RadzenGridColumn TItem="Employee" Property="name" Title="이름" />
+                <RadzenGridColumn TItem="Employee" Property="team" Title="Team" Width="9%">
+                    <EditTemplate Context="emp">
+                        <RadzenTextBox @bind-Value="emp.team" Style="width:100%; display: block" Name="team" />
+                    </EditTemplate>
+                </RadzenGridColumn>
+                <RadzenGridColumn TItem="Employee" Property="contact" Width="10%" Title="연락처" Filterable="false">
+                    <EditTemplate Context="emp">
+                        <RadzenTextBox @bind-Value="emp.contact" Style="width:100%; display: block" Name="contact" />
+                        <RadzenRequiredValidator Text="contact is required" Component="contact" Popup="true" />
+                    </EditTemplate>
+                </RadzenGridColumn>
+                <RadzenGridColumn Width="15%" TItem="Employee" Property="email" Title="Email" Filterable="false">
+                    <EditTemplate Context="emp">
+                        <RadzenTextBox @bind-Value="emp.email" Style="width: 100%; display: block" Name="email" />
+                        <RadzenRequiredValidator Text="contact is required" Component="email" Popup="true" />
+                    </EditTemplate>
+                </RadzenGridColumn>
+                <RadzenGridColumn Width="10%" TItem="Employee" Property="join_date" Title="입사일" Filterable="false">
+                    <Template Context="data">
+                        @String.Format("{0:d}", data.join_date)
+                    </Template>
+                    <EditTemplate Context="emp">
+                        <RadzenDatePicker @bind-Value="emp.join_date" Style="width:100%" />
+                        <RadzenRequiredValidator Text="join date is required" Component="join_date" Popup="true" />
+                    </EditTemplate>
+                </RadzenGridColumn>
+                <RadzenGridColumn Width="5%" TItem="Employee" Property="tot_annual" Title="발생연차" Filterable="false" />
+                <RadzenGridColumn Width="5%" TItem="Employee" Property="use_annual" Title="사용연차" Filterable="false" />
+
+                <RadzenGridColumn Width="6%" TItem="Employee" Property="work_hour" Title="채울시간" Filterable="false" />
+                <RadzenGridColumn Width="6%" TItem="Employee" Property="worked" Title="일한시간" Filterable="false">
+                    <Template Context="data">
+                        @string.Format("{0} : {1:00}", (data.worked.Days * 24) + data.worked.Hours, data.worked.Minutes)
+                    </Template>
+                </RadzenGridColumn>
+                <RadzenGridColumn Width="8%" TItem="Employee" Property="work_diff" Title="미달/초과" Filterable="false">
+                    <Template Context="data">
+                        @string.Format("[{0}] {1} : {2:00}", data.work_hour > data.worked.TotalHours ? "미달" : "초과", (data.work_diff.Days * 24) + data.work_diff.Hours, data.work_diff.Minutes)
+                    </Template>
+                </RadzenGridColumn>
+
+                <RadzenGridColumn Width="8%" TItem="Employee" Property="auth" Title="관리자(1)" Filterable="false">
+                    <Template Context="data">
+                        @(data.auth == 1 ? "관리자" : "일반")
+                    </Template>
+                    <EditTemplate Context="emp">
+                        <RadzenDropDown @bind-Value="emp.auth" Data="@Auths" TextProperty="Value" ValueProperty="Key" Style="width:100%" />
+                    </EditTemplate>
+                </RadzenGridColumn>
+                <RadzenGridColumn Width="10%" TItem="Employee" Property="retire_date" Title="퇴사일" Filterable="false">
+                    <Template Context="data">
+                        @String.Format("{0:d}", data.retire_date)
+                    </Template>
+                    <EditTemplate Context="emp">
+                        <RadzenDatePicker @bind-Value="emp.retire_date" Style="width:100%" />
+                    </EditTemplate>
+                </RadzenGridColumn>
+
+                <RadzenGridColumn TItem="Employee" Bubble="false" Filterable="false" Sortable="false" TextAlign="TextAlign.Center" Width="100px">
+                    <Template Context="emp">
+                        <RadzenButton Icon="edit" Size="ButtonSize.Medium" Click="@(args => EditRow(emp))" />
+                    </Template>
+                    <EditTemplate Context="emp">
+                        <RadzenButton Icon="save" Size="ButtonSize.Medium" Click="@((args) => SaveRow(emp))" />
+                        <RadzenButton Icon="cancel" Size="ButtonSize.Medium" Click="@((args) => CancelEdit(emp))" />
+                    </EditTemplate>
+                </RadzenGridColumn>
+
+                <RadzenGridColumn TItem="Employee" Context="emp" Bubble="false" Filterable="false" Sortable="false" TextAlign="TextAlign.Center" Width="70px">
+                    <Template Context="emp">
+                        <RadzenButton ButtonStyle="ButtonStyle.Danger" Icon="close" Size="ButtonSize.Medium" Click="@(args => DeleteRow(emp))" />
+                    </Template>
+                    <EditTemplate Context="emp">
+                        <RadzenButton ButtonStyle="ButtonStyle.Danger" Icon="close" Size="ButtonSize.Medium" Click="@(args => DeleteRow(emp))" />
+                    </EditTemplate>
+                </RadzenGridColumn>
+            </Columns>
+        </RadzenGrid>
+    </RadzenCard>
+</div>
+
+@code
+{
+    RadzenGrid<Employee> emp_grid;
+    Dictionary<int, Employee> employees;
+    AdminClose closed;
+
+    public Dictionary<int, string> Auths = new Dictionary<int, string>()
+{
+        { 0, "사용자" },
+        { 1, "관리자" },
+    };
+
+    bool visible;
+    DateTime tday = DateTime.Today;
+
+    protected override void OnInitialized()
+    {
+        string[] query = new string[4];
+
+        query[0] = "SELECT date FROM tb_holiday WHERE YEAR(date) = '" + tday.Year + "' AND MONTH(date) = '" + tday.Month + "';";
+
+        StringBuilder sb = new StringBuilder();
+        sb.Append("SELECT a.num, a.name, a.email, a.contact, a.team, a.join_dt, a.auth, a.retire_dt, " +
+            "IFNULL((SELECT SUM(c.deduction) FROM tb_daily AS b JOIN tb_work_type AS c ON b.`type`=c.`no` WHERE YEAR(b.base_date)=YEAR(CURRENT_DATE()) AND b.emp_num=a.num AND b.`type` > 10), 0) " +
+            "FROM tb_users AS a");
+
+        if (visible == false)
+            sb.Append(" WHERE a.retire_dt = ''");
+        sb.Append(";");
+
+        query[1] = sb.ToString();
+
+        query[2] = "SELECT a.idx, a.emp_num, a.base_date, a.start_dttm, a.end_dttm, b.* FROM tb_daily AS a JOIN tb_work_type AS b ON a.`type`=b.`no` " +
+            "WHERE YEAR(a.base_date) = " + tday.Year + " AND MONTH(a.base_date) = " + tday.Month + ";";
+
+        query[3] = "SELECT a.date, (SELECT name FROM tb_users WHERE a.emp_num=num) FROM tb_meta AS a ORDER BY a.date DESC LIMIT 1;";
+
+        DataTable[] dts = DB.SelectMulti(query);
+
+        if (dts.Length < query.Length)
+            return;
+
+        int month_work = (Tool.BusinessDays() - dts[0].Rows.Count) * 8;
+
+        employees = new Dictionary<int, Employee>();
+
+        for (int i = 0; i < dts[1].Rows.Count; i++)
+        {
+            var row = dts[1].Rows[i].ItemArray;
+
+            Employee emp = new Employee();
+            emp.num = (int)row[0];
+            emp.name = (string)row[1];
+            emp.email = (string)row[2];
+            emp._email = emp.email;
+            emp.contact = (string)row[3];
+            emp.team = (string)row[4];
+            emp.join_date = (DateTime)row[5];
+            emp.auth = (int)row[6];
+            emp.retire_date = (string)row[7];
+            emp.use_annual = (decimal)row[8];
+            emp.tot_annual = Tool.Vacation(emp.join_date);
+            emp.work_hour = month_work;
+            emp.dailies = new List<Daily>();
+
+            employees[emp.num] = emp;
+        }
+
+        for (int i = 0; i < dts[2].Rows.Count; i++)
+        {
+            var row = dts[2].Rows[i].ItemArray;
+
+            Daily day = new Daily();
+            day.idx = (int)row[0];
+            day.emp_num = (int)row[1];
+            day.base_date = (DateTime)row[2];
+            day.start_dttm = (DateTime)row[3];
+            day.end_dttm = (DateTime)row[4];
+            day.type_no = (int)row[5];
+            day.type_nm = (string)row[6];
+            day.type_category = (int)row[7];
+            day.deduction = (decimal)row[8];
+            day.worked_diff = Tool.WorkHours(day.start_dttm, day.end_dttm);
+            day.diff = day.worked_diff.TotalHours;
+
+            employees.TryGetValue(day.emp_num, out Employee emp);
+            if (emp == null)
+                continue;
+
+            if (day.type_category == 0)
+                day.text = string.Format("{0} [{1}시 {2:00}분]", day.type_nm, (day.worked_diff.Days * 24) + day.worked_diff.Hours, day.worked_diff.Minutes);
+            else
+                day.text = day.type_nm;
+
+            if (day.type_category == 0)
+            {
+                // 근무
+                emp.worked += day.worked_diff;
+
+                if (day.type_no == 1)
+                    emp.commute_time += day.worked_diff;
+                else if (day.type_no == 2)
+                    emp.remote_time += day.worked_diff;
+                else if (day.type_no == 3)
+                    emp.outside_time += day.worked_diff;
+            }
+            else
+                // 휴가
+                emp.work_hour -= (int)(day.deduction * 8);
+
+            emp.dailies.Add(day);
+        }
+
+        // 미달/초과 > 채워야할 시간 - 근무한 시간
+        foreach (Employee emp in employees.Values)
+        {
+            if (emp.work_hour > emp.worked.TotalHours)
+                emp.work_diff = TimeSpan.FromHours(emp.work_hour) - emp.worked;
+            else
+                emp.work_diff = emp.worked - TimeSpan.FromHours(emp.work_hour);
+
+            int month_days = DateTime.DaysInMonth(tday.Year, tday.Month);
+
+            emp.day_hour = new Dictionary<DateTime, double>();
+            for (int i = 1; i <= month_days; i++)
+            {
+                var day = emp.dailies.Where(x => x.type_category == 0 && x.base_date.Day == i);
+                emp.day_hour[new DateTime(tday.Year, tday.Month, i)] = day.Count() == 0 ? 0 : day.Sum(x => x.diff);
+            }
+
+            if (emp.dailies.Count > 0)
+                emp.visible_details = true;
+        }
+
+        closed = new AdminClose() { date = (DateTime)dts[3].Rows[0].ItemArray[0], emp_name = (string)dts[3].Rows[0].ItemArray[1] };
+    }
+
+    void Changing()
+    {
+        OnInitialized();
+    }
+
+    #region 수정버튼 이벤트
+    void EditRow(Employee emp)
+    {
+        emp_grid.EditRow(emp);
+    }
+    #endregion
+
+    #region 저장 이벤트
+    async Task SaveRow(Employee emp)
+    {
+        bool success = false;
+        if (emp.email != emp._email)
+        {
+            var user = await userManager.FindByEmailAsync(emp._email);
+            var token = await userManager.GenerateChangeEmailTokenAsync(user, emp.email);
+
+            var chg = await userManager.ChangeEmailAsync(user, emp.email, token);
+
+            user.UserName = emp.email;
+
+            await userManager.UpdateAsync(user);
+
+            success = chg.Succeeded;
+        }
+
+        if (!success)
+            emp_grid.CancelEditRow(emp);
+
+        string query = string.Format("UPDATE tb_users SET team='{0}', contact='{1}', email='{2}', join_dt='{3}', auth='{4}', retire_dt='{5}' WHERE num='{6}';",
+                emp.team, emp.contact, emp.email, emp.join_date.ToString("yyyy-MM-dd"), emp.auth, emp.retire_date, emp.num);
+
+        int rst = DB.Execute(query);
+
+        ShowNotification(NotificationSeverity.Success, "Modify", "수정이 되었습니다.");
+
+        emp_grid.CancelEditRow(emp);
+        await emp_grid.Reload();
+    }
+    #endregion
+
+    void CancelEdit(Employee emp)
+    {
+        emp_grid.CancelEditRow(emp);
+    }
+
+    async Task DeleteRow(Employee emp)
+    {
+        var rst = await dialogService.Confirm(emp.name + " 삭제하시겠습니까?", "Delete", new ConfirmOptions() { OkButtonText = "Yes", CancelButtonText = "No" });
+
+        if (rst == false)
+            return;
+
+        int del = DB.Execute("DELETE FROM tb_users WHERE num='" + emp.num + "';");
+        if (del <= 0)
+            return;
+
+        var user = await userManager.FindByEmailAsync(emp._email);
+
+        if (user != null)
+            await userManager.DeleteAsync(user);
+
+        ShowNotification(NotificationSeverity.Success, "Delete", "삭제하였습니다.");
+
+        employees.Remove(emp.num);
+        await emp_grid.Reload();
+    }
+
+    void OnDailyRender(SchedulerAppointmentRenderEventArgs<Daily> args)
+    {
+        args.Attributes["style"] = args.Data.type_category == 1 ? "background: LightCoral" : "background: default";
+    }
+
+    void OnClosingLastMonth()
+    {
+        DateTime now = DateTime.Now;
+        now = now.Date.AddDays(-(now.Day + 1));
+        int rst = DB.Execute("INSERT IGNORE INTO tb_meta (date, emp_num) VALUES ('" + now.ToString("yyyy-MM-dd") + "', (SELECT num FROM tb_users WHERE email='" + signInManager.Context.User.Identity.Name + "'));");
+
+        if (rst > 0)
+        {
+            ShowNotification(NotificationSeverity.Success, "마감", now.Date.ToString("yyyy년 MM월") + "이 마감이 되었습니다.");
+            OnInitialized();
+        }
+    }
+
+    // 알림 표시
+    void ShowNotification(NotificationSeverity type, string summary, string detail)
+    {
+        notificationService.Notify(new NotificationMessage() { Severity = type, Summary = summary, Detail = detail, Duration = 5000 });
+    }
+}

@@ -1,0 +1,80 @@
+﻿@using Microsoft.AspNetCore.Components
+@using Microsoft.AspNetCore.Http
+@using Radzen.Blazor
+@using works.Models
+@using works.Features.App.Services 
+
+@inherits LayoutComponentBase
+@inject ThemeState ThemeState
+@inject SideMenu MenuService
+@inject NavigationManager UriHelper
+@inject IJSRuntime JSRuntime
+@inject IHttpContextAccessor httpContextAccessor
+
+
+<RadzenSidebar @ref="@sidebar0">
+    <ChildContent>
+        <RadzenPanelMenu Style="padding-top: 2rem">
+            @foreach (var category in menus)
+            {
+                <RadzenPanelMenuItem @bind-Expanded="@category.Expanded" Text="@category.Name" Path="@category.Path" Icon="@category.Icon">
+                    @if (category.Children != null)
+                    {
+                        @foreach (var example in category.Children)
+                        {
+                            <RadzenPanelMenuItem Text="@example.Name" Path="@example.Path" Icon="@example.Icon" />
+                        }
+                    }
+                </RadzenPanelMenuItem>
+            }
+        </RadzenPanelMenu>
+
+        <ul class="menu-list">
+            <li><a href="/employees">This</a></li>
+            <li><a href="/that">And that</a></li>
+        </ul>
+        <AuthorizeView Policy="RequireAdmin">
+            <Authorized>
+                <p id="admin-menu-label" class="menu-label">
+                    Administration
+                </p>
+                <ul id="admin-menu-list" class="menu-list">
+                    <li><a href="/administration">Admin stuff</a></li>
+                    <li><a href="/unlimitedpower">Assert your power!</a></li>
+                </ul>
+            </Authorized>
+        </AuthorizeView>
+    </ChildContent>
+</RadzenSidebar>
+
+@code{ 
+    RadzenSidebar sidebar0;
+
+    IEnumerable<Menu> menus;
+
+    protected override void OnInitialized()
+    {
+        menus = MenuService.Menus;
+    }
+}
+
+@*<aside class="menu">
+        <p class="menu-label">
+            Something
+        </p>
+        <ul class="menu-list">
+            <li><a href="/employees">This</a></li>
+            <li><a href="/that">And that</a></li>
+        </ul>
+        <AuthorizeView Policy="RequireAdmin">
+            <Authorized>
+                <p id="admin-menu-label" class="menu-label">
+                    Administration
+                </p>
+                <ul id="admin-menu-list" class="menu-list">
+                    <li><a href="/administration">Admin stuff</a></li>
+                    <li><a href="/unlimitedpower">Assert your power!</a></li>
+                </ul>
+            </Authorized>
+        </AuthorizeView>
+    </aside>*@

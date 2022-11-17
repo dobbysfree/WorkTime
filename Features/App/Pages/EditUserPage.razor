@@ -1,0 +1,159 @@
+﻿@using Models
+@using Comm
+@using Data 
+@using System.Data
+
+@inject UserManager<IdentityUser> userManager
+@inject DialogService DialogService
+@inject Radzen.DialogService dialogService
+@inject NotificationService notificationService
+
+<RadzenTemplateForm TItem="Employee" Data="@User">
+    <h3>사번: @User.num</h3>
+    <RadzenCard Style="margin-bottom:20px">
+        <div class="row" style="margin-bottom: 20px">
+            <div class="col-md-3 align-right">
+                <RadzenLabel Text="이름" />
+            </div>
+            <div class="col">
+                <RadzenTextBox style="display: block; width:100%; font-size:large" @bind-Value="@User.name" ReadOnly="true" />
+            </div>
+        </div>
+
+        <div class="row" style="margin-bottom: 20px">
+            <div class="col-md-3 align-right">
+                <RadzenLabel Text="E-mail" />
+            </div>
+            <div class="col">
+                <RadzenTextBox style="display: block; width:100%; font-size:large" @bind-Value="@User.email" ReadOnly="true" />
+            </div>
+        </div>
+
+        <div class="row" style="margin-bottom: 20px">
+            <div class="col-md-3 align-right">
+                <RadzenLabel Text="연락처" />
+            </div>
+            <div class="col">
+                <RadzenTextBox style="display: block; width:100%; font-size:large" @bind-Value="@User.contact" />
+            </div>
+        </div>
+
+        <div class="row" style="margin-bottom: 20px">
+            <div class="col-md-3 align-right">
+                <RadzenLabel Text="팀" />
+            </div>
+            <div class="col">
+                <RadzenTextBox style="display: block; width:100%; font-size:large" @bind-Value="@User.team" />
+            </div>
+        </div>
+
+        <div class="row" style="margin-bottom: 20px">
+            <div class="col-md-3 align-right">
+                <RadzenLabel Text="입사일" />
+            </div>
+            <div class="col">
+                <RadzenDatePicker @bind-Value="@User.join_date" ShowTime="false" DateFormat="d" ReadOnly="true"/>
+            </div>
+        </div>
+
+        <div class="row" style="margin-bottom: 5px">
+            <RadzenFieldset Text="비밀번호 변경">
+                <div class="row align-right">
+                    <div class="col">
+                        <RadzenPassword style="display: block; width:100%; font-size:large" Placeholder="기존 비밀번호" @bind-Value="@crnt_pw"/>
+                    </div>
+                    <div class="col">
+                        <RadzenPassword style="display: block; width:100%; font-size:large" Placeholder="신규 비밀번호" @bind-Value="@new_pw" />
+                    </div>
+                    <div class="col-md-3">
+                        <RadzenButton Text="변경" Style="width:100%; padding-left:30px; padding-right:30px" Click="@OnChangePassword" />
+                    </div>
+                </div>
+                <div class="row">
+
+                </div>
+            </RadzenFieldset>
+        </div>
+    </RadzenCard>
+
+    <div class="row">
+        <div class="col-md-12">
+            <RadzenButton Click="@OnSubmit" Text="Save" Style="margin-bottom: 10px; margin-right:20px; width: 150px" />
+            <RadzenButton Click="@((args) => dialogService.Close(false))" ButtonStyle="ButtonStyle.Secondary" Text="Cancel" Style="margin-bottom: 10px; width: 150px" />
+        </div>
+    </div>
+</RadzenTemplateForm>
+
+@code
+{ 
+    [Parameter]
+    public Employee User { get; set; }
+
+    string crnt_pw;
+    string new_pw;
+    string _contact;
+    string _team;
+
+    protected override void OnParametersSet()
+    {
+        DataTable dt = DB.SelectSingle("SELECT a.num, a.name, a.contact, a.team, a.join_dt FROM tb_users AS a WHERE a.email='" + User.email + "';");
+        for (int i = 0; i < dt.Rows.Count; i++)
+        {
+            var row = dt.Rows[i].ItemArray;
+
+            User.num = (int)row[0];
+            User.name = (string)row[1];
+            User.contact = (string)row[2];
+            User.team = (string)row[3];
+            User.join_date = (DateTime)row[4];
+        }
+    }
+
+    void OnSubmit()
+    {
+        if (_contact != User.contact || _team != User.team)
+        {
+            int rst = DB.Execute(string.Format("UPDATE tb_users SET contact='{0}', team='{1}' WHERE num='{2}';", User.contact, User.team, User.num));
+
+            if (rst > 0)
+                ShowNotification(NotificationSeverity.Success, Info.Errors["02001"][0], Info.Errors["02001"][1]);
+        }
+
+        dialogService.Close(true);
+    }
+
+    async Task OnChangePassword()
+    {
+        if (string.IsNullOrEmpty(crnt_pw) || string.IsNullOrEmpty(new_pw))
+        {
+            ShowNotification(NotificationSeverity.Warning, Info.Errors["02101"][0], Info.Errors["02101"][1]);
+            return;
+        }
+
+        var user = await userManager.FindByEmailAsync(User.email);
+
+        var chk_pw = await userManager.CheckPasswordAsync(user, crnt_pw);
+        if (!chk_pw)
+        {
+            ShowNotification(NotificationSeverity.Warning, Info.Errors["02102"][0], Info.Errors["02102"][1]);
+            return;
+        }
+
+        var chg_pw = await userManager.ChangePasswordAsync(user, crnt_pw, new_pw);
+        if (!chg_pw.Succeeded)
+        {
+            ShowNotification(NotificationSeverity.Warning, Info.Errors["02103"][0], Info.Errors["02103"][1]);
+            return;
+        }
+
+        ShowNotification(NotificationSeverity.Success, Info.Errors["02002"][0], Info.Errors["02002"][1]);
+        crnt_pw = "";
+        new_pw = "";
+    }
+
+    // 알림 표시
+    void ShowNotification(NotificationSeverity type, string summary, string detail)
+    {
+        notificationService.Notify(new NotificationMessage() { Severity = type, Summary = summary, Detail = detail, Duration = 5000 });
+    }
+}

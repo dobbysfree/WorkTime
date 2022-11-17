@@ -1,0 +1,62 @@
+﻿@inject IJSRuntime JSRuntime
+
+<div class="@AnimClass" id="@Id">
+    @ChildContent
+</div>
+
+@code
+{
+    [Parameter] public RenderFragment ChildContent { get; set; }
+    [Parameter] public bool IsVisible { get; set; } = true;
+    [Parameter] public bool ShowIntro { get; set; } = false;
+
+    [Parameter] public string ShowClip { get; set; } = "fadeIn";
+    [Parameter] public string HideClip { get; set; } = "fadeOut";
+    [Parameter] public string UpdateClip { get; set; } = "pulse";
+    [Parameter] public string Class { get; set; } = "";
+
+    protected bool WasVisible { get; private set; }
+    protected string AnimClass { get; private set; }
+    protected string Id { get; private set; }
+
+    protected override void OnInitialized()
+    {
+        Id = Guid.NewGuid().ToString();
+        base.OnInitialized();
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (!ShowIntro)
+        {
+            if (IsVisible)
+            {
+                AnimClass = $"{Class} transition_showComplete";
+            }
+            else
+            {
+                AnimClass = $"{Class} transition_hideComplete";
+            }
+        }
+        else
+        {
+            if (WasVisible && !IsVisible)
+            {
+                AnimClass = $"animated {Class} {HideClip}";
+            }
+            else if (!WasVisible && IsVisible)
+            {
+                AnimClass = $"animated {Class} {ShowClip}";
+            }
+            else if (IsVisible && WasVisible)
+            {
+                JSRuntime.InvokeVoidAsync("Transitions.animate", Id, Class, UpdateClip);
+            }
+        }
+
+        ShowIntro = true;
+        WasVisible = IsVisible;
+
+        base.OnParametersSet();
+    }
+}

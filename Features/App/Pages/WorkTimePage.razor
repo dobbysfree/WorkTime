@@ -1,0 +1,335 @@
+﻿@page "/worktime"
+
+@using works.Models
+@using works.Comm
+@using works.Helpers
+@using System.Data
+
+@inject DialogService DialogService
+@inject SignInManager<IdentityUser> signInManager
+@inject NotificationService notificationService
+
+<div>
+    <div class="row">
+        <div class="col-lg-3 mb-3">
+            <RadzenCard style="height: 100%;margin-bottom:1rem">
+                <h4>
+                    <RadzenDropDown TValue="DateTime" Style="width:50%" Data="@dates" @bind-Value="@sel_date" Change="OnChangeMonth">
+                        <Template>
+                            @string.Format("{0:Y}", (DateTime)context)
+                        </Template>
+                    </RadzenDropDown>
+                    <RadzenLabel Text="근무 시간" Style="margin-left:10px" />
+                </h4>
+                @*   <h4>@(month.Month + "월 근무 시간")</h4>*@
+                <b style="background-color: rgba(0, 0, 0, 0); color: rgb(71, 156, 200); display: block; float: none; font-size: 1.75rem; margin-bottom: 0px; text-align: right;">
+                    @user.work_hour
+                </b>
+            </RadzenCard>
+        </div>
+        <div class="col-lg-3 mb-3">
+            <RadzenCard style="height: 100%">
+                <h4>@(DateTime.Today.Day + "일 근무 시간")</h4>
+                <b style="background-color: rgba(0, 0, 0, 0); color: rgb(71, 156, 200); display: block; float: none; font-size: 1.75rem; margin-bottom: 0px; text-align: right;">
+                    @(string.Format("{0}시 {1:00}분", (user.worked.Days * 24) + user.worked.Hours, user.worked.Minutes))
+                </b>
+                <RadzenProgressBar Value="@((int)((user.worked.TotalHours * 100) / user.work_hour))" Max="100" Style="margin-bottom: 5px; margin-top: 10px" />
+            </RadzenCard>
+        </div>
+        <div class="col-lg-3 mb-3">
+            <RadzenCard style="height: 100%">
+                <div class="row">
+                    <h4 style="color:red">미달</h4>
+                    <h4>  /  </h4>
+                    <h4 style="color:MediumBlue">초과</h4>
+                </div>
+                <b style="background-color: rgba(0, 0, 0, 0); color: @user.diff_color ; display: block; float: none; font-size: 1.75rem; margin-bottom: 0px; text-align: right;">
+                    @(string.Format("{0}시 {1:00}분", (user.work_diff.Days * 24) + user.work_diff.Hours, user.work_diff.Minutes))
+                </b>
+            </RadzenCard>
+        </div>
+        <div class="col-lg-3 mb-3">
+            <RadzenCard style="height: 100%">
+                <h4>연차</h4>
+                <b style="background-color: rgba(0, 0, 0, 0); color: rgb(71, 156, 200); display: block; float: none; font-size: 1.75rem; margin-bottom: 0px; text-align: right;">
+                    @(user.use_annual + " / " + user.tot_annual)
+                </b>
+                <RadzenProgressBar Value="@((int)((user.use_annual * 100) / user.tot_annual))" Max="100" Style="margin-bottom: 5px; margin-top: 10px" />
+            </RadzenCard>
+        </div>
+    </div>
+
+    <RadzenCard Style="height: 100%;margin-bottom:1rem">
+        <RadzenLabel Text="@(sel_date.Month + "월")" />
+        <RadzenChart>
+            <RadzenLineSeries Smooth="false" Title="Total" Data="@user.chart_works" CategoryProperty="Key" ValueProperty="Value">
+                <RadzenMarkers MarkerType="MarkerType.Circle" />
+                <RadzenLegend Visible="false" />
+            </RadzenLineSeries>
+            @*<RadzenCategoryAxis Padding="20" FormatString="{0:dd}일" Step="@TimeSpan.FromDays(1)"
+                Min="@DateTime.Today.AddDays(1 - DateTime.Now.Day)" Max="@DateTime.Today" />*@
+            <RadzenCategoryAxis Padding="20" FormatString="{0:dd}일" Step="@TimeSpan.FromDays(1)" />
+            <RadzenValueAxis>
+                <RadzenGridLines Visible="true" />
+            </RadzenValueAxis>
+        </RadzenChart>
+    </RadzenCard>
+
+    <RadzenCard Style="height: 100%;margin-bottom:1rem">
+        <RadzenScheduler @ref="calendar" style="height: 600px;" TItem="Daily" Data="@user.dailies" SelectedIndex="2"
+                         StartProperty="start_dttm" EndProperty="end_dttm" TextProperty="text" Date="@sel_date"
+                         AppointmentRender="@OnDailyRender" AppointmentSelect="@OnEditSlot" SlotSelect="@OnAddSlot">
+            <RadzenDayView />
+            <RadzenWeekView />
+            <RadzenMonthView />
+        </RadzenScheduler>
+    </RadzenCard>
+</div>
+
+@code
+{
+    Employee user;
+    Dictionary<int, WorkType> work_type;
+    //Dictionary<DateTime, double> chart_works;
+    //int work_hour { get; set; }         // 이달 채울 시간
+    //TimeSpan worked { get; set; }       // 이달 근무 시간
+    //TimeSpan work_diff { get; set; }    // 미달/초과 시간
+    //string diff_color { get; set; }     // 미달 초과 for font color
+
+    RadzenScheduler<Daily> calendar;
+
+    DateTime sel_date = DateTime.Today;
+    DateTime[] dates = new DateTime[5] {
+        DateTime.Today.Date.AddMonths(-2),
+        DateTime.Today.Date.AddMonths(-1),
+        DateTime.Today.Date,
+        DateTime.Today.Date.AddMonths(1),
+        DateTime.Today.Date.AddMonths(2)
+    };
+
+    DateTime close_date { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        string who = signInManager.Context.User.Identity.Name;
+
+        string[] query = new string[5];
+
+        // 사용자
+        query[0] = "SELECT a.num, a.name, a.email, a.contact, a.team, a.join_dt, a.auth, a.retire_dt, " +
+           "IFNULL((SELECT SUM(c.deduction) FROM tb_daily AS b JOIN tb_work_type AS c ON b.`type`=c.`no` WHERE YEAR(b.base_date)='" + sel_date.Year + "' AND b.emp_num=a.num " +
+           "AND (SELECT c.category FROM tb_work_type AS c WHERE b.`type`=c.`no`) = '1'), 0) " +
+           "FROM tb_users AS a WHERE a.email='" + who + "';";
+
+        // 공휴일
+        query[1] = "SELECT a.date, b.* FROM tb_holiday AS a JOIN tb_work_type AS b ON a.type_no=b.`no` WHERE YEAR(a.date) >= '" + sel_date.Year + "';";
+
+        // 근태&휴가
+        query[2] = "SELECT a.idx, a.emp_num, a.base_date, a.start_dttm, a.end_dttm, b.* FROM tb_daily AS a JOIN tb_work_type AS b ON a.`type`=b.`no` " +
+            "WHERE a.emp_num=(SELECT c.num FROM tb_users AS c WHERE c.email='" + who + "') " +
+            "AND YEAR(a.base_date) = '" + sel_date.Year + "' AND MONTH(a.base_date) = '" + sel_date.Month + "';";
+
+        // 근태타입
+        query[3] = "SELECT * FROM tb_work_type WHERE category < 2;";
+
+        // 종료일자
+        query[4] = "SELECT date FROM tb_meta ORDER BY date DESC LIMIT 1;";
+
+        DataTable[] dts = DB.SelectMulti(query);
+
+        if (dts.Length < query.Length)
+            return;
+
+        #region 사용자
+        user = new Employee();
+        for (int i = 0; i < dts[0].Rows.Count; i++)
+        {
+            var row = dts[0].Rows[i].ItemArray;
+
+            user.num = (int)row[0];
+            user.name = (string)row[1];
+            user.email = (string)row[2];
+            user.contact = (string)row[3];
+            user.team = (string)row[4];
+            user.join_date = (DateTime)row[5];
+            user.auth = (int)row[6];
+            user.retire_date = (string)row[7];
+            user.use_annual = (decimal)row[8];
+            user.tot_annual = Tool.Vacation(user.join_date);
+
+            user.dailies = new List<Daily>();
+            user.chart_works = new Dictionary<DateTime, double>();
+        }
+        #endregion
+
+
+        #region 공휴일
+        for (int i = 0; i < dts[1].Rows.Count; i++)
+        {
+            var row = dts[1].Rows[i].ItemArray;
+
+            Daily day = new Daily();
+            day.base_date = (DateTime)row[0];
+            day.start_dttm = day.base_date;
+            day.end_dttm = day.base_date;
+            day.type_no = (int)row[1];
+            day.type_nm = (string)row[2];
+            day.type_category = (int)row[3];
+            day.deduction = (decimal)row[4];
+            day.text = day.type_nm;
+
+            user.dailies.Add(day);
+        }
+        #endregion
+
+        #region 근태
+        // 휴일
+        int holidaies = user.dailies.Count(x => x.type_category == 2 && (x.base_date.Year == sel_date.Year && x.base_date.Month == sel_date.Month));
+
+        // 이달 채워야할 시간
+        user.work_hour = (Tool.BusinessDays() - holidaies) * 8;
+
+        for (int i = 0; i < dts[2].Rows.Count; i++)
+        {
+            var row = dts[2].Rows[i].ItemArray;
+
+            Daily day = new Daily();
+            day.idx = (int)row[0];
+            day.emp_num = (int)row[1];
+            day.base_date = (DateTime)row[2];
+            day.start_dttm = (DateTime)row[3];
+            day.end_dttm = (DateTime)row[4];
+            day.type_no = (int)row[5];
+            day.type_nm = (string)row[6];
+            day.type_category = (int)row[7];
+            day.deduction = (decimal)row[8];
+            day.worked_diff = Tool.WorkHours(day.start_dttm, day.end_dttm);
+            day.diff = day.worked_diff.TotalHours;
+
+            if (day.type_category == 0)
+                day.text = string.Format("{0} [{1}시 {2:00}분]", day.type_nm, (day.worked_diff.Days * 24) + day.worked_diff.Hours, day.worked_diff.Minutes);
+            else
+                day.text = day.type_nm;
+
+            user.dailies.Add(day);
+
+            if (day.type_category == 0)
+                // 근무
+                user.worked += day.worked_diff;
+            else
+                // 휴가
+                user.work_hour -= (int)(day.deduction * 8);
+        }
+
+        // 채워야할 시간 - 근무한 시간
+        if (user.work_hour > user.worked.TotalHours)
+        {
+            user.diff_color = "red";
+            user.work_diff = TimeSpan.FromHours(user.work_hour) - user.worked;
+        }
+        else
+        {
+            user.diff_color = "MediumBlue";
+            user.work_diff = user.worked - TimeSpan.FromHours(user.work_hour);
+        }
+        #endregion
+
+        #region 근무 차트
+        user.chart_works = new Dictionary<DateTime, double>();
+        //var tdy = DateTime.Today;
+        int month_days = DateTime.DaysInMonth(sel_date.Year, sel_date.Month);
+        for (int i = 1; i <= month_days; i++)
+        {
+            var day = user.dailies.Where(x => x.type_category == 0 && x.base_date.Day == i);
+
+            user.chart_works[new DateTime(sel_date.Year, sel_date.Month, i)] = day.Count() == 0 ? 0 : day.Sum(x => x.diff);
+        }
+        #endregion
+
+        #region 근태 구분 관리
+        work_type = new Dictionary<int, WorkType>();
+        for (int i = 0; i < dts[3].Rows.Count; i++)
+        {
+            var row = dts[3].Rows[i].ItemArray;
+            int no = (int)row[0];
+
+            work_type[no] = new WorkType { no = no, name = (string)row[1], category = (int)row[2], deduction = (decimal)row[3] };
+        }
+        #endregion
+
+        #region 마감 일자
+        close_date = (DateTime)dts[4].Rows[0].ItemArray[0];
+        #endregion
+    }
+
+
+    async Task OnChangeMonth()
+    {
+        await OnInitializedAsync();
+    }
+
+    void OnDailyRender(SchedulerAppointmentRenderEventArgs<Daily> args)
+    {
+        string color = "background: default";
+        if (args.Data.type_category == 1)
+            color = "background: LightCoral";
+        else if (args.Data.type_category == 2)
+            color = "background: red";
+
+        args.Attributes["style"] = color;
+    }
+
+    // 수정
+    async Task OnEditSlot(SchedulerAppointmentSelectEventArgs<Daily> args)
+    {
+        if (args.Data.type_category == 2)
+            return;
+
+        if (args.Data.base_date <= close_date)
+        {
+            ShowNotification(NotificationSeverity.Warning, "근태 수정/삭제", "마감되었습니다. 담당자에게 문의바랍니다.");
+            return;
+        }
+
+        Daily day = await DialogService.OpenAsync<EditWorkPage>("근태 수정/삭제", new Dictionary<string, object> {
+            { "org", args.Data },
+            { "work_type", work_type },
+            { "user", user },
+            { "IsEdit", true }
+        });
+
+        if (day == null)
+            return;
+
+        await OnInitializedAsync();
+    }
+
+    // 추가
+    async Task OnAddSlot(SchedulerSlotSelectEventArgs args)
+    {
+        if (args.Start.Date <= close_date)
+        {
+            ShowNotification(NotificationSeverity.Warning, "근태 추가", "마감되었습니다. 담당자에게 문의바랍니다.");
+            return;
+        }
+
+        Daily day = await DialogService.OpenAsync<EditWorkPage>("근태 추가", new Dictionary<string, object> {
+            { "org", new Daily() { base_date = args.Start.Date, start_dttm = args.Start.Date.AddHours(10), end_dttm = args.Start.Date.AddHours(19) } },
+            { "work_type", work_type },
+            { "user", user },
+            { "IsEdit", false }
+        });
+
+        if (day == null)
+            return;
+
+        await OnInitializedAsync();
+    }
+
+    #region 알람표시
+    void ShowNotification(NotificationSeverity type, string summary, string detail)
+    {
+        notificationService.Notify(new NotificationMessage() { Severity = type, Summary = summary, Detail = detail, Duration = 5000 });
+    }
+    #endregion
+}

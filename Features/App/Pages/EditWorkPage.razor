@@ -1,0 +1,130 @@
+﻿@using Models
+@using Comm
+
+@inject DialogService DialogService
+
+<RadzenTemplateForm TItem="Daily" Data="@org">
+    <div class="row" style="margin-bottom: 16px">      
+        <div class="col">
+            <RadzenSelectBar @bind-Value="org.type_category" TValue="int">
+                <Items>
+                    <RadzenSelectBarItem Text="근무" Value="0" Style="margin-right:10px" Visible="@(!IsEdit || (IsEdit && org.type_category == 0))" />
+                    <RadzenSelectBarItem Text="휴가" Value="1" Style="margin-left:10px" Visible="@(!IsEdit || (IsEdit && org.type_category == 1))" />
+                </Items>
+            </RadzenSelectBar>
+        </div>
+    </div>
+
+    <RadzenCard Visible="@(org.type_category == 0)">
+        <div class="row" style="margin-bottom: 16px">
+            <div class="col-md-3">
+                <RadzenLabel Text="구분" />
+            </div>
+            <div class="col">
+                <RadzenSelectBar @bind-Value="org.type_no" TValue="int" Name="sb_type">
+                    <Items>
+                        <RadzenSelectBarItem Text="통근" Value="1" Style="margin-right:10px" />
+                        <RadzenSelectBarItem Text="원격" Value="2" Style="margin-left:5px; margin-right:5px" />
+                        <RadzenSelectBarItem Text="외근" Value="3" Style="margin-left:10px" />
+                    </Items>
+                </RadzenSelectBar>
+            </div>
+        </div>
+
+        <div class="row" style="margin-bottom: 16px">
+            <div class="col-md-3">
+                <RadzenLabel Text="시작" />
+            </div>
+            <div class="col">
+                <RadzenDatePicker @bind-Value="org.start_dttm" Name="wsdt" ShowTime="true" />
+            </div>
+        </div>
+        <div class="row" style="margin-bottom: 16px">
+            <div class="col-md-3">
+                <RadzenLabel Text="종료" />
+            </div>
+            <div class="col">
+                <RadzenDatePicker @bind-Value="org.end_dttm" Name="wedt" ShowTime="true" />
+            </div>
+        </div>
+    </RadzenCard>
+
+    <RadzenCard Visible="@(org.type_category == 1)">
+        <div class="row" style="margin-bottom: 16px">
+            <div class="col-md-3">
+                <RadzenLabel Text="구분" />
+            </div>
+            <div class="col">
+                <RadzenDropDown TValue="int" Data="@work_type.Values.Where(x => x.category == 1)" TextProperty="name" ValueProperty="no" @bind-Value="org.type_no"/>
+            </div>
+        </div>
+
+        <div class="row" style="margin-bottom: 16px">
+            <div class="col-md-3">
+                <RadzenLabel Text="신청일" />
+            </div>
+            <div class="col">
+                <RadzenDatePicker @bind-Value="org.base_date" ShowTime="false" DateFormat="d"/>
+            </div>
+        </div>
+    </RadzenCard>
+
+    <div class="row" style="margin-top:20px">
+        <div class="col-md-12">
+            <RadzenButton Click="@((args) => OnSubmit(true))" Text="Save" Style="margin-bottom: 10px; margin-right:20px; width: 150px" />
+            <RadzenButton Click="@((args) => OnSubmit(false))" Text="Delete" Visible="@IsEdit"
+                          ButtonStyle="ButtonStyle.Secondary" Style="margin-bottom: 10px; width: 150px" />
+        </div>
+    </div>
+</RadzenTemplateForm>
+
+@code
+{ 
+    [Parameter]
+    public Daily org { get; set; }
+
+    [Parameter]
+    public Dictionary<int, WorkType> work_type { get; set; }
+
+    [Parameter]
+    public Employee user { get; set; }
+
+    [Parameter]
+    public bool IsEdit { get; set; }
+
+    void OnSubmit(bool btn)
+    {
+        string query = "";
+        if (!btn)
+            // 삭제
+            query = "DELETE FROM tb_daily WHERE idx='" + org.idx + "';";
+        else
+        {
+            if (org.type_category == 1)
+            {
+                // 휴가
+                int start = org.type_no == 13 ? 14 : 10;
+                org.start_dttm = org.base_date.AddHours(start);
+
+                int end = org.type_no < 15 ? (int)(work_type[org.type_no].deduction * 8) : 8;
+                org.end_dttm = org.start_dttm.AddHours(end);
+            }
+            else
+                // 근무
+                org.base_date = org.start_dttm.Date;
+
+            if (IsEdit)
+                // 수정
+                query = string.Format("UPDATE tb_daily SET base_date='{0}', type='{1}', start_dttm='{2}', end_dttm='{3}' WHERE idx='{4}';",
+                    org.base_date.ToString("yyyy-MM-dd"), org.type_no, org.start_dttm.ToString("yyyy-MM-dd HH:mm:ss"), org.end_dttm.ToString("yyyy-MM-dd HH:mm:ss"), org.idx);
+            else
+                // 추가
+                query = string.Format("INSERT INTO tb_daily (emp_num, base_date, type, start_dttm, end_dttm) VALUES ('{0}','{1}','{2}','{3}','{4}');",
+                    user.num, org.base_date.ToString("yyyy-MM-dd"), org.type_no, org.start_dttm.ToString("yyyy-MM-dd HH:mm:ss"), org.end_dttm.ToString("yyyy-MM-dd HH:mm:ss"));
+        }
+
+        int rst = DB.Execute(query);
+
+        DialogService.Close(org);
+    }
+}

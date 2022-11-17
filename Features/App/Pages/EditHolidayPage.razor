@@ -1,0 +1,58 @@
+﻿@using Models
+@using Comm
+
+@inject DialogService DialogService
+
+<RadzenTemplateForm TItem="Holiday">
+    <RadzenCard>
+        <div class="row" style="margin-bottom: 16px">
+            <div class="col-md-3">
+                <RadzenLabel Text="구분" />
+            </div>
+            <div class="col">
+                <RadzenDropDown TValue="int" Data="@work_type.Values" TextProperty="name" ValueProperty="no" @bind-Value="day.type_no" />
+            </div>
+        </div>
+
+        <div class="row" style="margin-bottom: 16px">
+            <div class="col-md-3">
+                <RadzenLabel Text="공휴일" />
+            </div>
+            <div class="col">
+                <RadzenDatePicker @bind-Value="day.date" ShowTime="false" DateFormat="d" />
+            </div>
+        </div>
+    </RadzenCard>
+    
+    <div class="row" style="margin-top:20px">
+        <div class="col-md-12">
+            <RadzenButton Click="@((args) => OnSubmit(true))" Text="Save" Style="margin-bottom: 10px; margin-right:20px; width: 150px" Visible="@(!IsEdit)"/>
+            <RadzenButton Click="@((args) => OnSubmit(false))" Text="Delete" Visible="@IsEdit"
+                          ButtonStyle="ButtonStyle.Secondary" Style="margin-bottom: 10px; width: 150px" />
+        </div>
+    </div>
+</RadzenTemplateForm>
+
+@code {
+    [Parameter]
+    public Holiday day { get; set; }
+
+    [Parameter]
+    public Dictionary<int, WorkType> work_type { get; set; }
+
+    [Parameter]
+    public bool IsEdit { get; set; }
+
+    void OnSubmit(bool btn)
+    {
+        string query = "";
+        if (!btn)
+            query = "DELETE FROM tb_holiday WHERE date='" + day.date.ToString("yyyy-MM-dd") + "' AND type_no='" + day.type_no + "'";
+        else
+            query = string.Format("INSERT INTO tb_holiday (date, type_no) VALUES ('{0}', '{1}');", day.date.ToString("yyyy-MM-dd"), day.type_no);
+
+        int rst = DB.Execute(query);
+
+        DialogService.Close(day);
+    }
+}

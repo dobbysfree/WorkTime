@@ -1,0 +1,117 @@
+﻿@page "/account/register"
+
+@using works.Comm
+@using works.Models
+
+@inject UserManager<IdentityUser> userManager
+@inject NavigationManager navigationManager
+
+<div class="container">
+    <RadzenCard>
+        <h1 class="title">계정 등록</h1>
+
+        <RadzenTemplateForm TItem="Account" Data="@acnt" Submit="@OnRegister">          
+            <div class="row" style="margin-bottom: 48px">
+                <div class="col-md-3 align-right">
+                    <RadzenLabel Text="사내 이메일" />
+                </div>
+                <div class="col">
+                    <RadzenTextBox style="display: block; width:50%; font-size:large" Name="tb_email" @bind-Value="@acnt.Email"/>
+                    <RadzenRequiredValidator Component="tb_email" Text="@pop_txt" Popup="true" Style="position: absolute" />
+                    <RadzenEmailValidator Component="tb_email" Text="Provide a valid email address" Popup="true" Style="position: absolute" />
+                </div>
+            </div>
+
+            <div class="row" style="margin-bottom: 48px">
+                <div class="col-md-3">
+                    <RadzenLabel Text="비밀번호" />
+                </div>
+                <div class="col">
+                    <RadzenPassword style="display: block; width:50%; font-size:x-large" Name="tb_pw" @bind-Value="@acnt.Password" />
+                    <RadzenRequiredValidator Component="tb_pw" Text="@pop_txt" Popup="true" Style="position: absolute" />
+                </div>
+            </div>
+
+            <div class="row" style="margin-bottom: 48px">
+                <div class="col-md-3">
+                    <RadzenLabel Text="비밀번호 재확인" />
+                </div>
+                <div class="col">
+                    <RadzenPassword style="display: block; width:50%; font-size:x-large" Name="tb_cpw" @bind-Value="@acnt.ConfirmPassword" />
+                    <RadzenRequiredValidator Component="tb_cpw" Text="Repeat your password" Popup="true" Style="position: absolute" />
+                    <RadzenCompareValidator Visible="@(!string.IsNullOrEmpty(acnt.ConfirmPassword))" Value="@acnt.Password" Component="tb_cpw" Text="Passwords should be the same" Popup="true" Style="position: absolute" />
+                </div>
+            </div>
+
+            <div class="row" style="margin-bottom: 48px">
+                <div class="col-md-3">
+                    <RadzenLabel Text="이름" />
+                </div>
+                <div class="col">
+                    <RadzenTextBox style="display: block; width:50%; font-size:large" Name="tb_name" @bind-Value="@acnt.Name" />
+                    <RadzenRequiredValidator Component="tb_name" Text="@pop_txt" Popup="true" Style="position: absolute" />
+                </div>
+            </div>
+
+            <div class="row" style="margin-bottom: 48px">
+                <div class="col-md-3">
+                    <RadzenLabel Text="휴대전화" />
+                </div>
+                <div class="col">
+                    <RadzenTextBox style="display: block; width:50%; font-size:large" Name="tb_contact" @bind-Value="@acnt.Contact" />
+                    <RadzenRequiredValidator Component="tb_contact" Text="@pop_txt" Popup="true" Style="position: absolute" />
+                </div>
+            </div>
+
+            <div class="row" style="margin-bottom: 48px">
+                <div class="col-md-3">
+                    <RadzenLabel Text="입사일" />
+                </div>
+                <div class="col">
+                    <RadzenDatePicker style="display: block; width:50%; font-size:large" Name="tb_join" DateFormat="d" @bind-Value="@acnt.JoinDate" />
+                    <RadzenRequiredValidator Component="tb_join" Text="@pop_txt" Popup="true" Style="position: absolute" />
+                </div>
+            </div>
+
+            <div class="row" style="margin-bottom: 48px">
+                <div class="col-md-3">
+                    <RadzenLabel Text="소속 팀" />
+                </div>
+                <div class="col">
+                    <RadzenTextBox style="display: block; width:50%; font-size:x-large" Name="tb_team" @bind-Value="@acnt.Team" />
+                </div>
+            </div>
+
+
+            <div class="row justify-content-center">
+                <div class="col-md-12 d-flex align-items-end justify-content-center" style="margin-top: 16px;">
+                    <RadzenButton ButtonType="ButtonType.Submit" Icon="save" Text="Register" />
+                    <RadzenButton ButtonStyle="ButtonStyle.Light" Icon="cancel" style="display: inline-block; margin-left: 10px;" Text="Cancel" />
+                </div>
+            </div>
+        </RadzenTemplateForm>
+    </RadzenCard>
+</div>
+
+@code 
+{
+
+    private Account acnt = new Account();
+    string pop_txt = "필수 정보입니다.";
+
+
+    private async Task OnRegister(Account model)
+    {
+        var result = await userManager.CreateAsync(new IdentityUser { UserName = acnt.Email, Email = acnt.Email, EmailConfirmed = true, PhoneNumber = acnt.Contact, PhoneNumberConfirmed = true }, acnt.Password);
+
+        if (result.Succeeded)
+        {
+            string query = string.Format("INSERT INTO tb_users (email, name, contact, team, join_dt) VALUES ('{0}', '{1}', '{2}', '{3}', '{4}') ON DUPLICATE KEY UPDATE team='{3}';",
+                acnt.Email, acnt.Name, acnt.Contact.Replace("-", ""), acnt.Team, acnt.JoinDate.ToString("yyyy-MM-dd"));
+            var rst = DB.Execute(query);
+
+            navigationManager.NavigateTo("account/signin");
+            return;
+        }
+    }
+}
