@@ -1,0 +1,12 @@
+﻿################################################################################
+# 이 .gitignore 파일은 Microsoft(R) Visual Studio에서 자동으로 만들어졌습니다.
+################################################################################
+
+/works/.vs/works
+/works/bin/Debug/netcoreapp3.1
+/works/obj
+/.vs
+/works/bin/Release/netcoreapp3.1
+/works/logs
+*.json
+logs/
